@@ -190,7 +190,7 @@ PrintDecimal	lda	R0+1	;MSB has sign
 ; then add one.
 ;
 		lda	#'-'
-		jsr	OUTCH		;print the negative sign
+		jsr	VOUTCH		;print the negative sign
 ;
 		lda	R0		;invert bits
 		eor	#$ff
@@ -238,7 +238,7 @@ pploop2		lda	R0		;LSB
 pprintit	tya
 		ora	#'0'
 		sta	diddigit
-		jsr	OUTCH
+		jsr	VOUTCH
 pprintno	ldx	printtx
 ;
 ; Move to the next table entry
@@ -253,7 +253,7 @@ pprintno	ldx	printtx
 ;
 		lda	R0
 		ora	#'0'
-		jmp	OUTCH
+		jmp	VOUTCH
 ;
 ; Finish doing the subtraction.
 ;
@@ -376,6 +376,7 @@ getDone2
 ; Thanks to Ross Archer for this code.
 ; http://www.6502.org/source/io/primm.htm
 ;
+	if KIM
 puts		sty	putsy
 		pla		;low part of "return" address
            			;(data start address)
@@ -399,6 +400,7 @@ psix1		inc	dpl
 		inc	dpl+1	;account for page crossing
 psix2		ldy	putsy
 		jmp	(dpl)	;return to byte following NULL
+	endif
 ;
 ;=====================================================
 ; Gets a line of input into LINBUF.
@@ -431,6 +433,11 @@ GetLinePr	pla		;restore
 getlinenp	ldx	#0	;offset into LINBUF
 getline1	stx	getlinx
 		jsr	GETCH
+	if	CTMON65
+		pha
+		jsr	cout
+		pla
+	endif
 		cmp	#CR
 		beq	getlind	;end of line
 		cmp	#BS	;backspace?
@@ -750,3 +757,18 @@ GetSizes
 		sta	UsedMem+1
 ;
 		rts
+;
+;=====================================================
+; Set output vector to the console output function
+;
+SetOutConsole	lda	#OUTCH&$ff
+		sta	BOutVec
+		lda	#OUTCH/256
+		sta	BOutVec+1
+		rts
+;
+;=====================================================
+; Jump to the output function in BOutVec
+;
+VOUTCH		jmp	(BOutVec)
+

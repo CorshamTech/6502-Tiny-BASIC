@@ -135,7 +135,7 @@ S17A:
 	EXIT
 
 S17:
-	TST	UNKNOWN,"REM"	;REMark.  Skip rest of line
+	TST	S17B,"REM"	;REMark.  Skip rest of line
 	NXT	CO
 	JMP	STMT
 ;
@@ -143,15 +143,25 @@ S17:
 ; to/from mass storage.
 ;
 S17B:
+	if	XKIM || CTMON65
 	TST	S17C,"SAVE"
-	SAVEP
+	OPENWRITE
+	DLIST
+	DCLOSE
 	JMP	CO
 
 S17C:
 	TST	UNKNOWN,"LOAD"
-	LOADP
-	JMP	CO
-
+	OPENREAD
+S17CLP:
+	DGETLINE	;get line from file
+	TSTL	S17EOL	;no line num means EOL
+	INSERT		;put it into the program
+	JMP	S17CLP	;keep going
+S17EOL
+	DCLOSE		;close disk file
+	JMP	CO	;back to start
+	endif
 ;
 ; Else, unknown command.
 ;

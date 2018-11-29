@@ -11,6 +11,16 @@
 ;
 ; 10/07/2017
 ;
+; This implements a stripped down Tiny BASIC 
+; interpreter using the Interpretive Language (IL)
+; method as described in the first few issues of
+; Dr Dobb's Journal.  The IL interpreter can be used
+; to write various languages simply by changing the
+; IL code rather than the interpreter itself.
+;
+; www.corshamtech.com
+; bob@corshamtech.com
+;
 ;=====================================================
 ;
 ; Create TRUE and FALSE values for conditionals.
@@ -18,13 +28,36 @@
 FALSE		equ	0
 TRUE		equ	~FALSE
 ;
+;---------------------------------------------------------
+; One of these must be set to indicate which environment
+; Tiny BASIC will be running in.  Here are the current
+; environments:
+;
+; KIM - This is a bare KIM-1.  You'll need to add a few
+; more K of RAM.
+;
+; XKIM - The Corsham Technologies xKIM extended monitor,
+; which enhances, without replacing, the standard KIM
+; monitor.  It gives access to routines to save/load files
+; to a micro SD card.
+;
+; CTMON65 is a from-scratch monitor written for the
+; Corsham Tech SS-50 6502 CPU board, but the monitor can
+; easily be ported to other systems.  It has support for
+; using a micro SD card for file storage/retrieval.
+;
+KIM		equ	FALSE	;Basic KIM-1, no extensions
+XKIM		equ	FALSE	;Corsham Tech xKIM monitor
+CTMON65		equ	TRUE	;Corsham Tech CTMON65
+;
 ; If ILTRACE is set then dump out the address of every
 ; IL opcode before executing it.
 ;
 ILTRACE		equ	FALSE
 ;
 ; If FIXED is set, put the IL code and the user
-; program space at fixed locations in memory.
+; program space at fixed locations in memory.  This is
+; meant only for debugging.
 ;
 FIXED		equ	FALSE
 ;
@@ -54,6 +87,9 @@ ERR_OVER	equ	3	;stack overflow
 ERR_EXTRA_STUFF	equ	4	;Stuff at end of line
 ERR_SYNTAX	equ	5	;various syntax errors
 ERR_DIVIDE_ZERO	equ	6	;divide by zero
+ERR_READ_FAIL	equ	7	;error loading file
+ERR_WRITE_FAIL	equ	8	;error saving file
+ERR_NO_FILENAME	equ	9
 ;
 ;=====================================================
 ; Zero page storage.
@@ -104,27 +140,35 @@ cold		jmp	cold2	;jump around vectors
 warm		jmp	warm2
 ;
 ; These are the user-supplied vectors to I/O routines.
+; If you want, you can just patch these in the binary
+; file, but it would be better to change the source
+; code.
 ;
+	if	KIM || XKIM
 OUTCH		jmp	$1ea0	;output char in A
 GETCH		jmp	$1e5a	;get char in A (blocks)
 CRLF		jmp	$1e2f	;print CR/LF
 OUTHEX		jmp	$1e3b	;print A as hex
 MONITOR		jmp	$1c4f	;return to monitor
+	if 	XKIM
+AutoRun		equ	$dff8
+	endif
+	endif
+	if	CTMON65
+		include	"ctmon65.inc"
+		code
+OUTCH		jmp	cout
+GETCH		jmp	cin
+CRLF		jmp	crlf
+OUTHEX		jmp	HexA
+MONITOR		jmp	WARM
+puts		equ	putsil
+	endif
 ;
 cold2		jsr	puts
 		db	CR,LF,CR,LF
 		db	"Bob's Tiny BASIC"
 		db	CR,LF,0
-;
-; This is a TEMPORARY debug aid... put a known pattern
-; into the user program space.
-;
-		ldx	#0
-		lda	#$ba
-zzxloop		sta	ProgramStart,x
-		inx
-		bne	zzxloop
-
 ;
 		lda	#IL&$ff
 		sta	ILPC
@@ -149,7 +193,8 @@ zzxloop		sta	ProgramStart,x
 ;
 ; This is the warm start entry point
 ;	
-warm2		jsr	CRLF
+warm2		jsr	SetOutConsole
+		jsr	CRLF
 		lda	errGoto
 		sta	ILPC
 		lda	errGoto+1
@@ -274,11 +319,15 @@ ILTBL		dw	iXINIT	;0
 		dw	iTSTV	;33
 		dw	iTSTL	;34
 		dw	iTSTN	;35
-		dw	iSAVEP	;36	
-		dw	iLOADP	;37
-		dw	iFREE	;38
-		dw	iRANDOM	;39
-		dw	iABS	;40
+		dw	iFREE	;36
+		dw	iRANDOM	;37
+		dw	iABS	;38
+		dw	iOPENREAD
+		dw	iOPENWRITE
+		dw	iDCLOSE	;41
+		dw	iDGETLINE	;Life, universe, everything
+		dw	iDLIST	;43
+
 ILTBLend	equ	*
 ;
 ;=====================================================
@@ -460,13 +509,13 @@ iXferok
 		jmp	NextIL
 ;
 ;=====================================================
-; 
+; Save the pointer to the next line to the call stack.
 ;
 iSAV
 		jmp	ILbad
 ;
 ;=====================================================
-; 
+; Pop the next line from the call stack.
 ;
 iRSTR
 		jmp	ILbad
@@ -806,7 +855,8 @@ iIND		jsr	popR1
 ; List the current BASIC program in memory.  Uses R0,
 ; tempIly, and dpl.
 ;
-iLST		lda	#ProgramStart&$ff
+iLST		jsr	SetOutConsole
+iLST2		lda	#ProgramStart&$ff
 		sta	dpl
 		lda	#ProgramStart>>8
 		sta	dpl+1
@@ -831,12 +881,12 @@ iLstNotEnd	ldy	#0
 		sty	tempIlY
 		jsr	PrintDecimal
 		lda	#SPACE
-		jsr	OUTCH
+		jsr	VOUTCH
 		ldy	tempIlY
 iLSTl2		lda	(dpl),y
 		beq	iLST3	;end of this line
 		sty	tempIlY
-		jsr	OUTCH
+		jsr	VOUTCH
 		ldy	tempIlY
 		iny
 		bne	iLSTl2	;do next char
@@ -853,10 +903,17 @@ iLST3		iny
 		adc	#0
 		sta	dpl+1
 ;
-		jsr	CRLF
+; Have to manually do CR/LF so it uses the vectored
+; output function.
+;
+		lda	#CR
+		jsr	VOUTCH
+		lda	#LF
+		jsr	VOUTCH
 		jmp	iLSTloop	;do next line
 ;
-iLstdone	jmp	NextIL
+iLstdone	jsr	SetOutConsole
+		jmp	NextIL
 ;
 ;=====================================================
 ; Get a line of text into LINBUF.  Terminate with a
@@ -1284,23 +1341,12 @@ iABS		jsr	popR0
 iABS_1		jsr	pushR0
 		jmp	NextIL
 ;
-;=====================================================
-; Save program to mass storage.
-;
-iSAVEP
-
-;
-;=====================================================
-; Load a program from mass storage.
-;
-iLOADP
-
-
-;
 		include	"support.asm"
+		include	"storage.asm"
 		include	"IL.inc"
+;
 	if FIXED
-	org	$1000
+		org	$1000
 	endif
 		include	"basic.il"
 PROGEND		equ	*
@@ -1316,6 +1362,8 @@ mathStack	ds	STACKSIZE*2
 mathStackPtr	ds	1
 retStack	ds	STACKSIZE*2
 retStackPtr	ds	1
+callStack	ds	STACKSIZE*2
+callStackPtr	ds	1
 LINBUF		ds	80
 getlinx		ds	1
 printtx		ds	1	;temp X for print funcs
@@ -1326,6 +1374,7 @@ MQ		ds	2	;used for some math
 sign		ds	1	;0 = positive, else negative
 rtemp1		ds	1
 random		ds	2
+BOutVec		ds	2
 ;
 ; PROGRAMEND is the end of the user's BASIC program.
 ; More precisely, it is one byte past the end.  Or,
@@ -1351,6 +1400,12 @@ FreeMem		ds	2	;amount of free memory
 		org	$2000
 	endif
 ProgramStart	equ	*
-
+;
+	if	CTMON65 || XKIM
+		code
+		org	AutoRun
+		dw	cold
+	endif
+;
 		end
 

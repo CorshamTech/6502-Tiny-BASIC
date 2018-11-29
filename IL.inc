@@ -174,26 +174,12 @@ TSTN		macro	addr
 		db	(addr-*)-1
 		endm
 ;
-; SAVEP will save the current program to whatever
-; storage media is available.
-;
-SAVEP		macro
-		db	36
-		endm
-;
-; LOADP will load a program from storage.
-; It will clear the current program first.
-;
-LOADP		macro
-		db	37
-		endm
-;
 ; FREE returns the amount of free RAM on top of
 ; the stack.  This is the amount of room the user
 ; program has available.
 ;
 FREE		macro
-		db	38
+		db	36
 		endm
 ;
 ; RANDOM takes the top item off the stack and
@@ -202,14 +188,47 @@ FREE		macro
 ; 42 then RANDOM returns a value from 0 to 41.
 ;
 RANDOM		macro
-		db	39
+		db	37
 		endm
 ;
 ; ABS will replace the top of stack with the 
 ; absolute value.
 ;
 ABS		macro
+		db	38
+		endm
+;
+; OPENREAD opens a file for reading, as in getting
+; statements from it.
+;
+OPENREAD	macro
+		db	39
+		endm
+;
+; OPENWRITE opens a file for writing, as in saving
+; the current program to it.
+;
+OPENWRITE	macro
 		db	40
 		endm
-
+;
+; DCLOSE closes any open disk file.
+;
+DCLOSE		macro
+		db	41
+		endm
+;
+; DGETLINE gets one line from the disk file and puts it
+; into LINBUFF.
+;
+DGETLINE	macro
+		db	42
+		endm
+;
+; DLIST saves the program to an open disk file.
+;
+DLIST		macro
+		db	43
+		endm
+;
 		list
