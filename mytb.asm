@@ -47,8 +47,8 @@ TRUE		equ	~FALSE
 ; using a micro SD card for file storage/retrieval.
 ;
 KIM		equ	FALSE	;Basic KIM-1, no extensions
-XKIM		equ	FALSE	;Corsham Tech xKIM monitor
-CTMON65		equ	TRUE	;Corsham Tech CTMON65
+XKIM		equ	TRUE	;Corsham Tech xKIM monitor
+CTMON65		equ	FALSE	;Corsham Tech CTMON65
 ;
 ; If ILTRACE is set then dump out the address of every
 ; IL opcode before executing it.
@@ -152,6 +152,10 @@ OUTHEX		jmp	$1e3b	;print A as hex
 MONITOR		jmp	$1c4f	;return to monitor
 	if 	XKIM
 AutoRun		equ	$dff8
+		include	"xkim.inc"
+puts		equ	putsil
+BUFFER_SIZE	equ	132
+		code
 	endif
 	endif
 	if	CTMON65
@@ -1375,6 +1379,9 @@ sign		ds	1	;0 = positive, else negative
 rtemp1		ds	1
 random		ds	2
 BOutVec		ds	2
+	if XKIM
+buffer		ds	BUFFER_SIZE
+	endif
 ;
 ; PROGRAMEND is the end of the user's BASIC program.
 ; More precisely, it is one byte past the end.  Or,
