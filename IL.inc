@@ -134,9 +134,9 @@ CALL		macro	addr
 		dw	addr
 		endm
 ;
-; JMP will set the IL PC to the specified value.
+; IJMP will set the IL PC to the specified value.
 ;
-JMP		macro	addr
+IJMP		macro	addr
 		db	29
 		dw	addr
 		endm

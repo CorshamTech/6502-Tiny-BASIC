@@ -136,7 +136,7 @@ FROM		ds	2
 ;
 ; Cold start is at $0200.  Warm start is at $0203.
 ;
-cold		jmp	cold2	;jump around vectors
+TBasicCold	jmp	cold2	;jump around vectors
 warm		jmp	warm2
 ;
 ; These are the user-supplied vectors to I/O routines.
@@ -1404,7 +1404,7 @@ ProgramStart	equ	*
 	if	CTMON65 || XKIM
 		code
 		org	AutoRun
-		dw	cold
+		dw	TBasicCold
 	endif
 ;
 		end
