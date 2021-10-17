@@ -1,4 +1,4 @@
-;
+LET;
 ;=====================================================
 ;=====================================================
 ;=====================================================
@@ -143,7 +143,7 @@ S17:
 ; to/from mass storage.
 ;
 S17B:
-	if	XKIM || CTMON65
+	if	(XKIM || CTMON65) && DISK_ACCESS
 	TST	S17C,"SAVE"
 	OPENWRITE
 	DLIST
@@ -206,9 +206,6 @@ T1:
 
 UNKNOWNVEC:
 	JMP	UNKNOWN
-
-
-
 ;
 ; Factor an expression.  Always test for functions
 ; first or else they'll be confused for variables.
@@ -217,9 +214,17 @@ FACT:
 	TST	F2A,"FREE()"
 	FREE
 	RTN
-
+;
+; RND() is supposed to have an argument but if none
+; was provided, just assume a large value.
+;
 F2A:
 	TST	F2B,"RND("
+	TST	F2A1,")"
+	LIT	32766
+	RANDOM
+	RTN
+F2A1:
 	CALL	FACT	;GET RANGE
 	TST	UNKNOWN,")"
 	RANDOM

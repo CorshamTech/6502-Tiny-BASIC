@@ -154,7 +154,7 @@ xfer4:		sec
 ; the next line.
 ;
 xfer3		jsr	FindNextLine
-		jmp	xfer2
+		jmp	iXFER1
 ;
 ;=====================================================
 ; This advances CURPTR to the next line.  If there
@@ -177,7 +177,18 @@ FindNext3	iny		;skip null byte
 		sta	CURPTR
 		bcc	FindNext4	;exit
 		inc	CURPTR+1
-FindNext4	rts		
+FindNext4	rts
+;
+;=====================================================
+; This compares CURPTR to PROGRAMEND and returns Z set
+; if they are equal, Z clear if not.
+;
+AtEnd		lda	CURPTR
+		cmp	PROGRAMEND
+		bne	atendexit
+		lda	CURPTR+1
+		cmp	PROGRAMEND+1
+atendexit	rts
 ;
 ;=====================================================
 ; Print the contents of R0 as a signed decimal number.
@@ -682,7 +693,6 @@ Skip3		rts
 ; This is some debug logic which displays the current
 ; value of the ILPC and the line buffer.
 ;
-	if ILTRACE
 dbgLine		jsr	puts
 		db	"ILPC: ",0
 		lda	ILPC+1
@@ -709,7 +719,6 @@ dbgLine		jsr	puts
 		jsr	OUTHEX
 ;
 		jmp	CRLF
-	endif
 ;
 ;=====================================================
 ; This function might go away eventually, but was

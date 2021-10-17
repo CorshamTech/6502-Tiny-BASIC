@@ -18,6 +18,9 @@
 ; to write various languages simply by changing the
 ; IL code rather than the interpreter itself.
 ;
+; 10/15/2021 - Bob Applegate
+;		Fxed major bug in findLine
+;
 ; www.corshamtech.com
 ; bob@corshamtech.com
 ;
@@ -49,6 +52,10 @@ TRUE		equ	~FALSE
 KIM		equ	FALSE	;Basic KIM-1, no extensions
 XKIM		equ	TRUE	;Corsham Tech xKIM monitor
 CTMON65		equ	FALSE	;Corsham Tech CTMON65
+;
+; If set, include disk functions.
+;
+DISK_ACCESS	equ	FALSE
 ;
 ; If ILTRACE is set then dump out the address of every
 ; IL opcode before executing it.
@@ -96,6 +103,7 @@ ERR_NO_FILENAME	equ	9
 ;
 		bss
 		org	$0040
+ILTrace		ds	1	;non-zero means tracing
 variables	ds	26*2	;2 bytes, A-Z
 variablesEnd	equ	*
 ILPC		ds	2	;IL program counter
@@ -144,19 +152,23 @@ warm		jmp	warm2
 ; file, but it would be better to change the source
 ; code.
 ;
-	if	KIM || XKIM
+	if	KIM
 OUTCH		jmp	$1ea0	;output char in A
 GETCH		jmp	$1e5a	;get char in A (blocks)
 CRLF		jmp	$1e2f	;print CR/LF
 OUTHEX		jmp	$1e3b	;print A as hex
 MONITOR		jmp	$1c4f	;return to monitor
+	endif
 	if 	XKIM
-AutoRun		equ	$dff8
 		include	"xkim.inc"
+		code
+OUTCH		jmp	$1ea0
+GETCH		jmp	xkGETCH
+CRLF		jmp	$1e2f	;print CR/LF
+OUTHEX		jmp	xkPRTBYT
+MONITOR		jmp	extKIM
 puts		equ	putsil
 BUFFER_SIZE	equ	132
-		code
-	endif
 	endif
 	if	CTMON65
 		include	"ctmon65.inc"
@@ -170,8 +182,10 @@ puts		equ	putsil
 	endif
 ;
 cold2		jsr	puts
-		db	CR,LF,CR,LF
-		db	"Bob's Tiny BASIC"
+		db	CR,LF
+		db	"Bob's Tiny BASIC v0.3"
+		db	CR,LF	
+		db	"https://github.com/CorshamTech/6502-Tiny-BASIC"
 		db	CR,LF,0
 ;
 		lda	#IL&$ff
@@ -197,8 +211,7 @@ cold2		jsr	puts
 ;
 ; This is the warm start entry point
 ;	
-warm2		jsr	SetOutConsole
-		jsr	CRLF
+warm2		jsr	CRLF
 		lda	errGoto
 		sta	ILPC
 		lda	errGoto+1
@@ -206,7 +219,14 @@ warm2		jsr	SetOutConsole
 ;
 ; And continue with both starts here
 ;
-coldtwo		lda	#0
+coldtwo		jsr	SetOutConsole
+;
+; The ILTrace flag is now run-time settable.
+;
+		lda	#ILTRACE&$ff
+		sta	ILTrace
+;
+		lda	#0
 		sta	RunMode
 		sta	LINBUF
 		lda	#LINBUF&$ff
@@ -220,11 +240,10 @@ coldtwo		lda	#0
 ; by ILPC and adjusts ILPC to point to the next
 ; instruction to execute.
 ;
-NextIL
-	if ILTRACE
+NextIL		lda	ILTrace
+		beq	NextIL2
 		jsr	dbgLine
-	endif
-		ldy	CUROFF
+NextIL2		ldy	CUROFF
 		jsr	SkipSpaces
 		sty	CUROFF
 ;
@@ -285,7 +304,8 @@ ILgood		tay		;move index into Y
 ; mulitplied by two, then looked-up in this table.
 ; There is absolutely nothing special about the order
 ; of entries here... they all decode at exactly the
-; same speed.
+; same speed.  However the entry number must match the
+; values in IL.inc.
 ;
 ILTBL		dw	iXINIT	;0
 		dw	iDONE	;1
@@ -326,12 +346,25 @@ ILTBL		dw	iXINIT	;0
 		dw	iFREE	;36
 		dw	iRANDOM	;37
 		dw	iABS	;38
+;
+; Disk functions.  There must be pointers
+; to functions even if no disk is supported.
+; Makes things easier in IL.inc.
+;
+	if	DISK_ACCESS
 		dw	iOPENREAD
 		dw	iOPENWRITE
 		dw	iDCLOSE	;41
 		dw	iDGETLINE	;Life, universe, everything
 		dw	iDLIST	;43
-
+	else
+		dw	NextIL	;39
+		dw	NextIL	;40
+		dw	NextIL	;41
+		dw	NextIL	;42
+		dw	NextIL	;43
+	endif
+;
 ILTBLend	equ	*
 ;
 ;=====================================================
@@ -345,10 +378,6 @@ ILTBLend	equ	*
 ;
 iINIT		lda	#0	;clear IL stack pointer
 		sta	retStackPtr
-;		lda	#IL&0xff	;start of IL
-;		sta	ILPC
-;		lda	#IL>>8
-;		sta	ILPC+1
 ;
 		lda	#ProgramStart&$ff	;user prog
 		sta	CURPTR
@@ -443,23 +472,15 @@ iNXT		lda	RunMode
 		jmp	iJMP
 ;
 iNxtRun		jsr	FindNextLine
-;
-; Make sure we're not at the end of the program.
-;
-		lda	CURPTR
-		cmp	PROGRAMEND
-		bne	iNxtRun2
-		lda	CURPTR+1
-		cmp	PROGRAMEND+1
-		bne	iNxtRun2
+		jsr	AtEnd
+		bne	iNxtRun2	;not at end
 ;
 ; At the end of the program.  Pretend an END statement
 ; was found.
 ;
-		jmp	iFIN
+iFINv		jmp	iFIN
 ;
 iNxtRun2	jsr	getILWord	;ignore next word
-;		jsr	FindNextLine
 		jmp	NextIL
 ;
 ;=====================================================
@@ -470,11 +491,12 @@ iNxtRun2	jsr	getILWord	;ignore next word
 ;
 iXFER		jsr	popR0
 		jsr	findLine
-iXFER2		ldy	#2	;point to start of text
+iXFER2		jsr	AtEnd	;at end of user program?
+		beq	iFINv
+		ldy	#2	;point to start of text
 		sty	CUROFF
 		lda	#$ff
 		sta	RunMode
-
 ;
 ; Transfer IL to STMT.  I don't like having this
 ; hard-coded; fix it.
@@ -482,19 +504,6 @@ iXFER2		ldy	#2	;point to start of text
 		lda	#STMT&$ff
 		sta	ILPC
 		lda	#STMT>>8
-		sta	ILPC+1
-
-		jmp	NextIL
-;
-; If both Z and C are cleared then there is no
-; program to run.
-;
-		beq	iXferok
-		bcc	iXferok
-;
-		lda	errGoto
-		sta	ILPC
-		lda	errGoto+1
 		sta	ILPC+1
 		jmp	NextIL
 ;
@@ -1264,6 +1273,13 @@ iFREE		jsr	GetSizes
 ; stack
 ;
 iRANDOM		jsr	popR1	;mod value
+;
+; If the value is zero, just return a one.
+;
+		lda	R0
+		ora	R0+1
+		beq	irandom1
+;
 		lda	random+1
 		sta	rtemp1
 		lda	random
@@ -1322,7 +1338,7 @@ iRANDOM_4	bpl	iRANDOM_sub
 ;
 ; All done.  Almost.  Add one, then push the result.
 ;
-		inc	R0
+irandom1	inc	R0
 		bne	iRANDOM_3
 		inc	R0+1
 iRANDOM_3	jsr	pushR0	;return value
@@ -1346,7 +1362,9 @@ iABS_1		jsr	pushR0
 		jmp	NextIL
 ;
 		include	"support.asm"
+	if	DISK_ACCESS
 		include	"storage.asm"
+	endif
 		include	"IL.inc"
 ;
 	if FIXED
