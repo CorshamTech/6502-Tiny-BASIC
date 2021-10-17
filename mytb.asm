@@ -18,8 +18,13 @@
 ; to write various languages simply by changing the
 ; IL code rather than the interpreter itself.
 ;
-; 10/15/2021 - Bob Applegate
-;		Fxed major bug in findLine
+; 10/15/2021 v0.4 - Bob Applegate
+;		* Fxed major bug in findLine that
+;		  caused corrupted lines, crashes, etc.
+;		* If no parameter given to RND, assume
+;		  32766.
+;		* No more error 5 when a program
+;		  reaches the end without an END.
 ;
 ; www.corshamtech.com
 ; bob@corshamtech.com
@@ -144,7 +149,7 @@ FROM		ds	2
 ;
 ; Cold start is at $0200.  Warm start is at $0203.
 ;
-cold		jmp	cold2	;jump around vectors
+TBasicCold	jmp	cold2	;jump around vectors
 warm		jmp	warm2
 ;
 ; These are the user-supplied vectors to I/O routines.
@@ -1429,7 +1434,7 @@ ProgramStart	equ	*
 	if	CTMON65 || XKIM
 		code
 		org	AutoRun
-		dw	cold
+		dw	TBasicCold
 	endif
 ;
 		end
