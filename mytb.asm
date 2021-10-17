@@ -60,7 +60,7 @@ CTMON65		equ	FALSE	;Corsham Tech CTMON65
 ;
 ; If set, include disk functions.
 ;
-DISK_ACCESS	equ	FALSE
+DISK_ACCESS	equ	TRUE
 ;
 ; If ILTRACE is set then dump out the address of every
 ; IL opcode before executing it.
